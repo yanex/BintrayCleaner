@@ -23,7 +23,7 @@ fun readConfiguration(): Map<String, String> {
 
     val properties = Properties()
     propertiesFile.inputStream().use { properties.load(it) }
-    return properties.map { Pair(it.toString(), it.toString()) }.toMap()
+    return properties.map { Pair(it.key.toString(), it.value.toString()) }.toMap()
 }
 
 fun main(args: Array<String>) {
