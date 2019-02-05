@@ -7,6 +7,7 @@ import retrofit2.Call
 import retrofit2.Response
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
+import java.net.SocketTimeoutException
 import java.text.DateFormat
 import java.util.*
 import java.util.concurrent.TimeUnit
@@ -20,9 +21,9 @@ fun clean(options: Set<CliOption>, config: Configuration) {
     val credentials = Credentials.basic(config["bintray.user"], config["bintray.api.key"])
 
     val httpClient = OkHttpClient().newBuilder()
-        .connectTimeout(15, TimeUnit.MINUTES)
-        .readTimeout(15, TimeUnit.MINUTES)
-        .writeTimeout(15, TimeUnit.MINUTES)
+        .connectTimeout(10, TimeUnit.SECONDS)
+        .readTimeout(10, TimeUnit.SECONDS)
+        .writeTimeout(10, TimeUnit.SECONDS)
         .build()
 
     val retrofit = Retrofit.Builder()
@@ -38,10 +39,11 @@ fun clean(options: Set<CliOption>, config: Configuration) {
 
     val oneMonthFromNow = Date(System.currentTimeMillis() - 1000L * 3600 * 24 * 30) // 1 month
 
-    val preserveCount = 3
-    val devsToPreserve = versions.asSequence()
+    val preserveCount = 15
+    val devVersionsToPreserve = versions.asSequence()
         .filter { ArtifactType.parse(it) == ArtifactType.DEV }
-        .take(preserveCount).toSet()
+        .take(preserveCount)
+        .toSet()
 
     for (versionId in versions.reversed()) {
         val artifactType = ArtifactType.parse(versionId)
@@ -50,7 +52,7 @@ fun clean(options: Set<CliOption>, config: Configuration) {
             continue
         }
 
-        if (versionId in devsToPreserve) {
+        if (versionId in devVersionsToPreserve) {
             println("$versionId: skipping, preserving last $preserveCount build(s)")
             continue
         }
@@ -69,12 +71,21 @@ fun clean(options: Set<CliOption>, config: Configuration) {
                 return
             }
 
-            lateinit var result: Response<Unit>
-            val took = measureTimeMillis {
-                result = bintrayService.deleteVersion(
-                    credentials, repoOwner, repoName, packageName, versionId).execute()
-            } / 1000
-            println(if (result.isSuccessful) "ok (took $took s)." else result.raw().message())
+            lateinit var message: String
+
+            try {
+                lateinit var result: Response<Unit>
+                val took = measureTimeMillis {
+                    result = bintrayService.deleteVersion(
+                        credentials, repoOwner, repoName, packageName, versionId
+                    ).execute()
+                } / 1000
+                message = if (result.isSuccessful) "ok (took $took s)." else result.raw().message()
+            } catch (e: SocketTimeoutException) {
+                message = "timeout."
+            }
+
+            println(message)
         }
 
         if (Automatic in options) {
